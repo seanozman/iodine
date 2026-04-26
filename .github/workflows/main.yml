@@ -4,7 +4,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4 # 更新到 v4
       
       - name: Install Cross-Compiler
         run: |
@@ -14,14 +14,12 @@ jobs:
       - name: Compile (Static & No-Zlib)
         run: |
           cd src
-          # 物理屏蔽 zlib 引用，防止交叉编译环境缺库
           sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' client.c
           sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' common.h
-          # 使用正确的工具链名称 aarch64-linux-gnu-gcc
           aarch64-linux-gnu-gcc -static -DNO_ZLIB -DZ_OK=0 -o iodine_arm64 *.c -lm
           
       - name: Upload Result
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # 关键：必须改为 v4 才能解决截图里的报错
         with:
           name: iodine-binary
           path: src/iodine_arm64
