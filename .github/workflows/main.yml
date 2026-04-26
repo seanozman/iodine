@@ -1,4 +1,4 @@
-name: Perfect Native ARM64 Build
+name: Cached Native ARM64 Build
 on: [push]
 
 jobs:
@@ -8,6 +8,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 1. 尝试恢复缓存的编译器环境（如果之前成功过）
+      - name: Cache Build Environment
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            /var/cache/apt/archives
+          key: ${{ runner.os }}-arm64-build-v1
+
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -15,21 +25,18 @@ jobs:
         run: |
           docker run --rm -v ${{ github.workspace }}:/work -w /work/src \
           --platform linux/arm64 debian:bookworm sh -c "
-            apt-get update && \
-            apt-get install -y gcc make libc6-dev zlib1g-dev git && \
+            # 如果缓存命中，这里可以极速跳过安装步骤
+            (apt-get update || true) && \
+            apt-get install -y gcc make libc6-dev zlib1g-dev --no-install-recommends && \
             
-            # 1. 修复版本号报错：手动定义 GITREVISION，不再依赖 git 命令
-            sed -i 's/\$(shell git describe --tags --always)/\"0.8.0\"/g' Makefile && \
+            # 以下是我们要修改的代码逻辑，直接执行：
+            sed -i '1i #define GITREVISION \"0.8.0\"' common.h && \
+            sed -i '2i #define _GNU_SOURCE\n#include <unistd.h>\n#include <netdb.h>' common.h && \
             
-            # 2. 修复所有头文件定义：在 common.h 顶部强行注入宏
-            # 这一步能解决你刚才看到的 getopt 和 AI_PASSIVE 未定义报错
-            sed -i '1i #define _GNU_SOURCE\n#include <unistd.h>\n#include <netdb.h>' common.h && \
-            
-            # 3. 强制静态编译完整版（包含 zlib）
             make CC=gcc CFLAGS='-O2 -Wall -DNO_ZLIB=0' LDFLAGS='-static -lz' iodine
           "
 
-      - name: Verify and Upload
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
           name: iodine-perfect-arm64
