@@ -4,22 +4,35 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # 更新到 v4
+      - uses: actions/checkout@v4
       
       - name: Install Cross-Compiler
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           
-      - name: Compile (Static & No-Zlib)
+      - name: Patch & Compile
         run: |
           cd src
+          # 1. 屏蔽 zlib
           sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' client.c
           sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' common.h
-          aarch64-linux-gnu-gcc -static -DNO_ZLIB -DZ_OK=0 -o iodine_arm64 *.c -lm
+          
+          # 2. 修复 GITREVISION 未定义报错 (手动给它一个版本号)
+          sed -i 's/GITREVISION/"0.8.0"/g' iodine.c
+          sed -i 's/GITREVISION/"0.8.0"/g' iodined.c
+          
+          # 3. 修复 IPv6 结构体报错 (在 common.h 头部补上必要的系统定义)
+          sed -i '1i #define _GNU_SOURCE' common.h
+          
+          # 4. 只编译客户端 (因为你 M2 只需要客户端，这样可以避开 iodined 的更多报错)
+          # 把 iodine.c 放在最后，确保 main 函数被正确识别
+          aarch64-linux-gnu-gcc -static -DNO_ZLIB -DZ_OK=0 -o iodine_arm64 \
+          util.c common.c tun.c dns.c read.c encoding.c login.c base32.c \
+          base64.c base128.c md5.c client.c iodine.c -lm
           
       - name: Upload Result
-        uses: actions/upload-artifact@v4 # 关键：必须改为 v4 才能解决截图里的报错
+        uses: actions/upload-artifact@v4
         with:
           name: iodine-binary
           path: src/iodine_arm64
