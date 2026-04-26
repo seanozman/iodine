@@ -1,43 +1,18 @@
-name: Cached Native ARM64 Build
-on: [push]
-
-jobs:
-  build_arm64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # 1. 尝试恢复缓存的编译器环境（如果之前成功过）
-      - name: Cache Build Environment
-        id: cache-build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.ccache
-            /var/cache/apt/archives
-          key: ${{ runner.os }}-arm64-build-v1
-
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build in ARM64 Container
+- name: Build in ARM64 Container
         run: |
           docker run --rm -v ${{ github.workspace }}:/work -w /work/src \
           --platform linux/arm64 debian:bookworm sh -c "
-            # 如果缓存命中，这里可以极速跳过安装步骤
-            (apt-get update || true) && \
-            apt-get install -y gcc make libc6-dev zlib1g-dev --no-install-recommends && \
+            # 1. 极速安装（如果缓存命中会很快）
+            apt-get update && apt-get install -y gcc make libc6-dev zlib1g-dev --no-install-recommends && \
             
-            # 以下是我们要修改的代码逻辑，直接执行：
+            # 2. 注入核心定义
             sed -i '1i #define GITREVISION \"0.8.0\"' common.h && \
             sed -i '2i #define _GNU_SOURCE\n#include <unistd.h>\n#include <netdb.h>' common.h && \
             
-            make CC=gcc CFLAGS='-O2 -Wall -DNO_ZLIB=0' LDFLAGS='-static -lz' iodine
+            # 3. 正确的编译命令：
+            # 不要手动指定输出文件名，让 Makefile 按照它原本的逻辑跑完所有依赖
+            make CC=gcc CFLAGS='-O2 -Wall -DNO_ZLIB=0' LDFLAGS='-static' iodine && \
+            
+            # 4. 编译完后改名，方便 Action 识别上传
+            cp iodine iodine_arm64
           "
-
-      - name: Upload Result
-        uses: actions/upload-artifact@v4
-        with:
-          name: iodine-perfect-arm64
-          path: src/iodine
