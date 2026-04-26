@@ -1,0 +1,17 @@
+name: Build Static ARM64
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Cross-Compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu zlib1g-dev:arm64
+      - name: Compile
+        run: |
+          cd src
+          aarch64-none-linux-gnu-gcc -static -o iodine_arm64 *.c -lm
+      - uses: actions/upload-artifact@v3
+        with:
+          name: iodine-binary
+          path: src/iodine_arm64
