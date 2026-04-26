@@ -5,13 +5,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
       - name: Install Cross-Compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu zlib1g-dev:arm64
-      - name: Compile
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          
+      - name: Compile (Static & No-Zlib)
         run: |
           cd src
-          aarch64-none-linux-gnu-gcc -static -o iodine_arm64 *.c -lm
-      - uses: actions/upload-artifact@v3
+          # 物理屏蔽 zlib 引用，防止交叉编译环境缺库
+          sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' client.c
+          sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' common.h
+          # 使用正确的工具链名称 aarch64-linux-gnu-gcc
+          aarch64-linux-gnu-gcc -static -DNO_ZLIB -DZ_OK=0 -o iodine_arm64 *.c -lm
+          
+      - name: Upload Result
+        uses: actions/upload-artifact@v3
         with:
           name: iodine-binary
           path: src/iodine_arm64
