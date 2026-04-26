@@ -1,4 +1,4 @@
-name: Official Style ARM64 Build
+name: Perfect Native ARM64 Build
 on: [push]
 
 jobs:
@@ -8,21 +8,25 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup QEMU (ARM64 Emulation)
+      - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Build in ARM64 Container
         run: |
-          # 我们启动一个真正的 ARM64 容器（Debian），在里面跑完整的 make
-          # 这样就不存在交叉编译的环境变量问题，它是“原生”编译
           docker run --rm -v ${{ github.workspace }}:/work -w /work/src \
           --platform linux/arm64 debian:bookworm sh -c "
             apt-get update && \
-            apt-get install -y gcc make libc6-dev zlib1g-dev && \
-            # 修改 Makefile 强制进行静态链接
-            sed -i 's/LDFLAGS += -lz/LDFLAGS += -lz -static/g' Makefile && \
-            # 执行完整的编译流程
-            make iodine
+            apt-get install -y gcc make libc6-dev zlib1g-dev git && \
+            
+            # 1. 修复版本号报错：手动定义 GITREVISION，不再依赖 git 命令
+            sed -i 's/\$(shell git describe --tags --always)/\"0.8.0\"/g' Makefile && \
+            
+            # 2. 修复所有头文件定义：在 common.h 顶部强行注入宏
+            # 这一步能解决你刚才看到的 getopt 和 AI_PASSIVE 未定义报错
+            sed -i '1i #define _GNU_SOURCE\n#include <unistd.h>\n#include <netdb.h>' common.h && \
+            
+            # 3. 强制静态编译完整版（包含 zlib）
+            make CC=gcc CFLAGS='-O2 -Wall -DNO_ZLIB=0' LDFLAGS='-static -lz' iodine
           "
 
       - name: Verify and Upload
