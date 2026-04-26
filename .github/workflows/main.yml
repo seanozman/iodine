@@ -14,22 +14,30 @@ jobs:
       - name: Patch & Compile
         run: |
           cd src
-          # 1. 屏蔽 zlib
+          
+          # 1. 动态生成缺失的 base64u.c (报错的核心原因)
+          # 原理：iodine 使用 base64.c 作为模板生成 base64u.c
+          sed -e 's/base64/base64u/g' -e 's/BASE64/BASE64U/g' base64.c > base64u.c
+          
+          # 2. 屏蔽 zlib 依赖
           sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' client.c
           sed -i 's/#include <zlib.h>/\/\/#include <zlib.h>/g' common.h
           
-          # 2. 修复 GITREVISION 未定义报错 (手动给它一个版本号)
-          sed -i 's/GITREVISION/"0.8.0"/g' iodine.c
-          sed -i 's/GITREVISION/"0.8.0"/g' iodined.c
+          # 3. 屏蔽源码中对压缩函数的实际调用 (防止 undefined reference to uncompress)
+          # 我们把它们替换成返回错误或直接注释掉
+          sed -i 's/uncompress/(\/\*uncompress\*\/)0/g' client.c
+          sed -i 's/compress2/(\/\*compress2\*\/)0/g' client.c
           
-          # 3. 修复 IPv6 结构体报错 (在 common.h 头部补上必要的系统定义)
+          # 4. 修复 GITREVISION 宏定义
+          sed -i 's/GITREVISION/"0.8.0"/g' iodine.c
+          
+          # 5. 修复 IPv6 结构体定义
           sed -i '1i #define _GNU_SOURCE' common.h
           
-          # 4. 只编译客户端 (因为你 M2 只需要客户端，这样可以避开 iodined 的更多报错)
-          # 把 iodine.c 放在最后，确保 main 函数被正确识别
+          # 6. 一行命令编译客户端 (加入 base64u.c)
           aarch64-linux-gnu-gcc -static -DNO_ZLIB -DZ_OK=0 -o iodine_arm64 \
           util.c common.c tun.c dns.c read.c encoding.c login.c base32.c \
-          base64.c base128.c md5.c client.c iodine.c -lm
+          base64.c base64u.c base128.c md5.c client.c iodine.c -lm
           
       - name: Upload Result
         uses: actions/upload-artifact@v4
