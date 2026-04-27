@@ -25,6 +25,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+// 在文件头部增加：
+#include <sys/socket.h>
+#include <net/if.h>
 
 #ifdef DARWIN
 #include <ctype.h>
@@ -88,6 +91,45 @@ static char if_name[250];
 int
 open_tun(const char *tun_device)
 {
+    int tun_fd;
+    struct ifreq ifreq;
+    // 强制指向 M2 正确的驱动路径
+    char *tunnel = "/dev/net/tun";
+
+    if ((tun_fd = open(tunnel, O_RDWR)) < 0) {
+        warn("open_tun: %s", tunnel);
+        return -1;
+    }
+
+    memset(&ifreq, 0, sizeof(ifreq));
+    /* IFF_NO_PI 很重要：它不增加额外的 4 字节包头，
+       能减少因包头偏移导致的流量解析失败。 */
+    ifreq.ifr_flags = IFF_TUN | IFF_NO_PI;
+
+    if (tun_device != NULL && tun_device[0] != '\0') {
+        strncpy(ifreq.ifr_name, tun_device, IFNAMSIZ);
+        ifreq.ifr_name[IFNAMSIZ-1] = '\0';
+    } else {
+        strncpy(ifreq.ifr_name, "dns%d", IFNAMSIZ);
+    }
+
+    if (ioctl(tun_fd, TUNSETIFF, (void *) &ifreq) != -1) {
+        // 记录内核实际创建的名字
+        strncpy(if_name, ifreq.ifr_name, sizeof(if_name));
+        fprintf(stderr, "Device dns0/tun0 created successfully: %s\n", if_name);
+        fd_set_close_on_exec(tun_fd);
+        return tun_fd;
+    }
+
+    warn("open_tun: ioctl[TUNSETIFF] failed. Check if /dev/net/tun exists.");
+    close(tun_fd);
+    return -1;
+}
+
+/*
+int
+open_tun(const char *tun_device)
+{
 	int tun_fd;
 	struct ifreq ifreq;
 	// 1. 修正路径，指向 M2 真正的内核驱动位置
@@ -126,7 +168,7 @@ open_tun(const char *tun_device)
 	close(tun_fd);
 	return -1;
 }
-
+*/
 
 /*
 int
@@ -402,6 +444,9 @@ utun_unit(const char *dev)
 	return unit;
 }
 
+
+
+
 static int
 open_utun(const char *dev)
 {
@@ -640,6 +685,52 @@ read_tun(int tun_fd, char *buf, size_t len)
 }
 #endif
 
+
+int
+tun_setip(const char *ip, const char *other_ip, int netbits)
+{
+    int sockfd;
+    struct ifreq ifr;
+    struct sockaddr_in *addr;
+
+    // 创建一个临时 socket 用于执行 IOCTL
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("socket");
+        return -1;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, if_name, IFNAMSIZ);
+
+    // 1. 设置本地隧道 IP (通常是服务器推送的 10.0.0.2)
+    addr = (struct sockaddr_in *)&ifr.ifr_addr;
+    addr->sin_family = AF_INET;
+    inet_pton(AF_INET, ip, &addr->sin_addr);
+    if (ioctl(sockfd, SIOCSIFADDR, &ifr) < 0) {
+        perror("SIOCSIFADDR");
+    }
+
+    // 2. 设置对端（Destination/Peer）IP (通常是服务器的 10.0.0.1)
+    inet_pton(AF_INET, other_ip, &addr->sin_addr);
+    if (ioctl(sockfd, SIOCSIFDSTADDR, &ifr) < 0) {
+        perror("SIOCSIFDSTADDR");
+    }
+
+    // 3. 激活网卡 (将状态设为 UP 和 RUNNING)
+    if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) >= 0) {
+        ifr.ifr_flags |= (IFF_UP | IFF_RUNNING);
+        if (ioctl(sockfd, SIOCSIFFLAGS, &ifr) < 0) {
+            perror("SIOCSIFFLAGS (UP)");
+        }
+    }
+
+    close(sockfd);
+    fprintf(stderr, "Tun setup completed: %s <-> %s\n", ip, other_ip);
+    return 0;
+}
+
+/*
 int
 tun_setip(const char *ip, const char *other_ip, int netbits)
 {
@@ -675,7 +766,7 @@ tun_setip(const char *ip, const char *other_ip, int netbits)
 	}
 #ifndef WINDOWS32
 # ifdef FREEBSD
-	display_ip = other_ip; /* FreeBSD wants other IP as second IP */
+	display_ip = other_ip; /* FreeBSD wants other IP as second IP *
 # else
 	display_ip = ip;
 # endif
@@ -704,7 +795,7 @@ tun_setip(const char *ip, const char *other_ip, int netbits)
 	return system(cmdline);
 #else /* WINDOWS32 */
 
-	/* Set device as connected */
+	/* Set device as connected *
 	fprintf(stderr, "Enabling interface '%s'\n", if_name);
 	status = 1;
 	r = DeviceIoControl(dev_handle, TAP_IOCTL_SET_MEDIA_STATUS, &status,
@@ -717,12 +808,12 @@ tun_setip(const char *ip, const char *other_ip, int netbits)
 	if (inet_aton(ip, &addr)) {
 		ipdata[0] = (DWORD) addr.s_addr;   /* local ip addr */
 		ipdata[1] = net.s_addr & ipdata[0]; /* network addr */
-		ipdata[2] = (DWORD) net.s_addr;    /* netmask */
+		ipdata[2] = (DWORD) net.s_addr;    /* netmask *
 	} else {
 		return -1;
 	}
 
-	/* Tell ip/networkaddr/netmask to device for arp use */
+	/* Tell ip/networkaddr/netmask to device for arp use *
 	r = DeviceIoControl(dev_handle, TAP_IOCTL_CONFIG_TUN, &ipdata,
 		sizeof(ipdata), &ipdata, sizeof(ipdata), &len, NULL);
 	if (!r) {
@@ -730,14 +821,16 @@ tun_setip(const char *ip, const char *other_ip, int netbits)
 		return -1;
 	}
 
-	/* use netsh to set ip address */
+	/* use netsh to set ip address *
 	fprintf(stderr, "Setting IP of interface '%s' to %s (can take a few seconds)...\n", if_name, ip);
 	snprintf(cmdline, sizeof(cmdline), "netsh interface ip set address \"%s\" static %s %s",
 		if_name, ip, inet_ntoa(net));
 	return system(cmdline);
 #endif
 }
+*/
 
+	
 int
 tun_setmtu(const unsigned mtu)
 {
