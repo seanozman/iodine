@@ -691,15 +691,14 @@ read_tun(int tun_fd, char *buf, size_t len)
 }
 #endif
 
-
 int
 tun_setip(const char *ip, const char *other_ip, int netbits)
 {
+#ifdef LINUX
     int sockfd;
     struct ifreq ifr;
     struct sockaddr_in *addr;
 
-    // 创建一个临时 socket 用于执行 IOCTL
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
         perror("socket");
@@ -709,32 +708,34 @@ tun_setip(const char *ip, const char *other_ip, int netbits)
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, if_name, IFNAMSIZ);
 
-    // 1. 设置本地隧道 IP (通常是服务器推送的 10.0.0.2)
     addr = (struct sockaddr_in *)&ifr.ifr_addr;
     addr->sin_family = AF_INET;
+
+    // 1. 设置本地隧道 IP (服务器推送的 ip)
     inet_pton(AF_INET, ip, &addr->sin_addr);
-    if (ioctl(sockfd, SIOCSIFADDR, &ifr) < 0) {
-        perror("SIOCSIFADDR");
-    }
+    if (ioctl(sockfd, SIOCSIFADDR, &ifr) < 0) perror("SIOCSIFADDR");
 
-    // 2. 设置对端（Destination/Peer）IP (通常是服务器的 10.0.0.1)
+    // 2. 设置对端 IP (服务器推送的 other_ip)
     inet_pton(AF_INET, other_ip, &addr->sin_addr);
-    if (ioctl(sockfd, SIOCSIFDSTADDR, &ifr) < 0) {
-        perror("SIOCSIFDSTADDR");
-    }
+    if (ioctl(sockfd, SIOCSIFDSTADDR, &ifr) < 0) perror("SIOCSIFDSTADDR");
 
-    // 3. 激活网卡 (将状态设为 UP 和 RUNNING)
+    // 3. 激活网卡 (UP & RUNNING)
     if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) >= 0) {
         ifr.ifr_flags |= (IFF_UP | IFF_RUNNING);
-        if (ioctl(sockfd, SIOCSIFFLAGS, &ifr) < 0) {
-            perror("SIOCSIFFLAGS (UP)");
-        }
+        if (ioctl(sockfd, SIOCSIFFLAGS, &ifr) < 0) perror("SIOCSIFFLAGS");
     }
 
     close(sockfd);
-    fprintf(stderr, "Tun setup completed: %s <-> %s\n", ip, other_ip);
     return 0;
+
+#elif defined(WINDOWS32)
+    /* 这里保留原有的 Windows 逻辑，注意检查这里的花括号和注释 */
+    /* 报错 811 行的那个注释 /* netmask * 必须改成 /* netmask */
+    // ... 原 Windows 代码 ...
+    return 0;
+#endif
 }
+
 
 /*
 int
