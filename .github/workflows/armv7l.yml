@@ -19,13 +19,15 @@ jobs:
           # 1. 物理生成缺失零件
           sed -e 's/base64/base64u/g' -e 's/BASE64/BASE64U/g' base64.c > base64u.c
           
-          # 2. 注入宏定义
-          echo '#define GITREVISION \"0.8.0\"' > version.h
-          echo '#define PROTOCOL_VERSION \"00000502\"' >> version.h
-          sed -i '1i #include \"version.h\"\n#define _GNU_SOURCE\n#include <unistd.h>\n#include <netdb.h>' common.h
+          # 2. 注入宏定义 (修正了引号转义问题)
+          echo '#define GITREVISION "0.8.0"' > version.h
+          echo '#define PROTOCOL_VERSION "00000502"' >> version.h
           
-          # 3. 针对 armv7l 的交叉编译
-          arm-linux-gnueabihf-gcc -static -O2 -Wall -DNO_ZLIB=0 -DPROTOCOL_VERSION='\"00000502\"' \
+          # 3. 修改 common.h 引入必要的头文件
+          sed -i '1i #include "version.h"\n#define _GNU_SOURCE\n#include <unistd.h>\n#include <netdb.h>' common.h
+          
+          # 4. 交叉编译 (移除命令行中的 -D 定义，全部依赖 version.h)
+          arm-linux-gnueabihf-gcc -static -O2 -Wall -DNO_ZLIB=0 \
           util.c common.c tun.c dns.c read.c encoding.c login.c base32.c \
           base64.c base64u.c base128.c md5.c client.c iodine.c \
           -o iodine_arm32 -lz -lm
