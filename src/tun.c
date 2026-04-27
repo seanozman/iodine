@@ -94,7 +94,7 @@ open_tun(const char *tun_device)
 #ifdef ANDROID
 	char *tunnel = "/dev/tun";
 #else
-	char *tunnel = "/dev/net/tun";
+	char *tunnel = "/dev/tun";
 #endif
 
 	if ((tun_fd = open(tunnel, O_RDWR)) < 0) {
