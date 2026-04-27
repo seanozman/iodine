@@ -696,46 +696,42 @@ int
 tun_setip(const char *ip, const char *other_ip, int netbits)
 {
 #ifdef LINUX
+    // --- 这里的代码是我们要用的原生 IOCTL 逻辑 ---
     int sockfd;
     struct ifreq ifr;
     struct sockaddr_in *addr;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
-        perror("socket");
-        return -1;
-    }
+    if (sockfd < 0) return -1;
 
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, if_name, IFNAMSIZ);
-
     addr = (struct sockaddr_in *)&ifr.ifr_addr;
     addr->sin_family = AF_INET;
 
-    // 1. 设置本地隧道 IP (服务器推送的 ip)
     inet_pton(AF_INET, ip, &addr->sin_addr);
-    if (ioctl(sockfd, SIOCSIFADDR, &ifr) < 0) perror("SIOCSIFADDR");
+    ioctl(sockfd, SIOCSIFADDR, &ifr);
 
-    // 2. 设置对端 IP (服务器推送的 other_ip)
     inet_pton(AF_INET, other_ip, &addr->sin_addr);
-    if (ioctl(sockfd, SIOCSIFDSTADDR, &ifr) < 0) perror("SIOCSIFDSTADDR");
+    ioctl(sockfd, SIOCSIFDSTADDR, &ifr);
 
-    // 3. 激活网卡 (UP & RUNNING)
     if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) >= 0) {
         ifr.ifr_flags |= (IFF_UP | IFF_RUNNING);
-        if (ioctl(sockfd, SIOCSIFFLAGS, &ifr) < 0) perror("SIOCSIFFLAGS");
+        ioctl(sockfd, SIOCSIFFLAGS, &ifr);
     }
-
     close(sockfd);
-    return 0;
+    return 0; 
+    // --- LINUX 分支结束 ---
 
 #elif defined(WINDOWS32)
-    /* 这里保留原有的 Windows 逻辑，注意检查这里的花括号和注释 */
-    /* 报错 811 行的那个注释 /* netmask * 必须改成 /* netmask */
+    // --- 报错就在下面这块，确保它们被包裹在 WINDOWS32 里 ---
+    // 这里应该是你代码里报错的 ipdata 逻辑
+    // 检查第 819 行：/* netmask * 后面一定要加一个 / 变成 */
     // ... 原 Windows 代码 ...
     return 0;
-#endif
-}
+
+#endif /* 结束所有条件编译 */
+} /* 确保这个花括号在这里，闭合整个 tun_setip 函数 */
 
 
 /*
