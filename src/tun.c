@@ -35,6 +35,7 @@
 #include <sys/socket.h>     // 必须包含
 #include <netinet/in.h>    // 必须包含
 #include <arpa/inet.h>     // 必须包含
+#endif
 #ifdef DARWIN
 #include <ctype.h>
 #include <sys/kern_control.h>
