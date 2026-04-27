@@ -28,7 +28,13 @@
 // 在文件头部增加：
 #include <sys/socket.h>
 #include <net/if.h>
-
+#ifdef LINUX
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <linux/if_tun.h>
+#include <sys/socket.h>     // 必须包含
+#include <netinet/in.h>    // 必须包含
+#include <arpa/inet.h>     // 必须包含
 #ifdef DARWIN
 #include <ctype.h>
 #include <sys/kern_control.h>
