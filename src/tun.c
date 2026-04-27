@@ -35,6 +35,13 @@
 #include <sys/socket.h>     // 必须包含
 #include <netinet/in.h>    // 必须包含
 #include <arpa/inet.h>     // 必须包含
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <linux/if_tun.h>
+#include <errno.h>
 #endif
 #ifdef DARWIN
 #include <ctype.h>
