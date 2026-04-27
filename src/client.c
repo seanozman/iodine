@@ -1399,8 +1399,44 @@ handshake_login(int dns_fd, int seed)
 				return 1;
 			} else if (strncmp("BADIP", in, 5) == 0) {
 				warnx("BADIP: Server rejected sender IP address (maybe iodined -c will help)");
-				return 1;
-			} else if (sscanf(in, "%64[^-]-%64[^-]-%d-%d",
+				return 1;	
+			} else if (sscanf(in, "%64[^-]-%64[^-]-%d-%d", server, client, &mtu, &netmask) == 4) {
+                server[64] = 0;    /* 定位到 handshake_login 函数中 sscanf 成功后的位置 */
+                client[64] = 0;
+
+                char cmd[512];
+                const char *if_name = "dns0"; // iodine 默认网卡名
+
+                fprintf(stderr, "Auto-configuring %s: IP %s, MTU %d\n", if_name, client, mtu);
+
+    /* * 关键点：不再调用 tun_setip，直接拼接 M2 兼容的 ip 命令
+     * 1. 强制使用 /27 掩码，避开 netmask 0000001f 报错
+     * 2. 使用 ip link set 激活网卡
+     */
+    
+    // 配置 IP 地址 (remote_ip 使用 client 变量)
+                snprintf(cmd, sizeof(cmd), "ip addr add %s/27 dev %s 2>/dev/null", client, if_name);
+                system(cmd);
+
+    // 设置 MTU 并拉起网卡
+                snprintf(cmd, sizeof(cmd), "ip link set dev %s mtu %d up 2>/dev/null", if_name, mtu);
+                system(cmd);
+
+    // 添加到服务端的路由
+                snprintf(cmd, sizeof(cmd), "ip route add %s/32 dev %s 2>/dev/null", server, if_name);
+                system(cmd);
+
+    // 添加整个隧道网段路由 (假设是 10.0.0.0/27)
+                system("ip route add 10.0.0.0/27 dev dns0 2>/dev/null");
+
+                fprintf(stderr, "Server tunnel IP is %s\n", server);
+                return 0;
+
+            } else {
+    // ... 原有的错误处理 ...
+
+				
+				/*if (sscanf(in, "%64[^-]-%64[^-]-%d-%d",
 				server, client, &mtu, &netmask) == 4) {
 
 				server[64] = 0;
@@ -1410,9 +1446,9 @@ handshake_login(int dns_fd, int seed)
 
 					fprintf(stderr, "Server tunnel IP is %s\n", server);
 					return 0;
-				} else {
+				} */ 
 					errx(4, "Failed to set IP and MTU");
-				}
+				} 
 			} else {
 				fprintf(stderr, "Received bad handshake\n");
 			}
