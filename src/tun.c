@@ -88,6 +88,50 @@ static char if_name[250];
 int
 open_tun(const char *tun_device)
 {
+	int tun_fd;
+	struct ifreq ifreq;
+	// 1. 修正路径，指向 M2 真正的内核驱动位置
+	char *tunnel = "/dev/net/tun";
+
+	if ((tun_fd = open(tunnel, O_RDWR)) < 0) {
+		warn("open_tun: %s", tunnel);
+		return -1;
+	}
+
+	memset(&ifreq, 0, sizeof(ifreq));
+
+	// 2. 建议加上 IFF_NO_PI，减少不必要的包头，提高效率
+	ifreq.ifr_flags = IFF_TUN | IFF_NO_PI;
+
+	if (tun_device != NULL && tun_device[0] != '\0') {
+		strncpy(ifreq.ifr_name, tun_device, IFNAMSIZ);
+		ifreq.ifr_name[IFNAMSIZ-1] = '\0';
+	} else {
+		// 3. 如果没指定名字，默认叫 dns%d
+		strncpy(ifreq.ifr_name, "dns%d", IFNAMSIZ);
+	}
+
+	// 4. 调用 ioctl，由内核完成网卡创建
+	if (ioctl(tun_fd, TUNSETIFF, (void *) &ifreq) != -1) {
+		// 记录内核实际分配的名字 (比如 dns0)
+		strncpy(if_name, ifreq.ifr_name, sizeof(if_name));
+		if_name[sizeof(if_name)-1] = '\0';
+		
+		fprintf(stderr, "Opened %s\n", if_name);
+		fd_set_close_on_exec(tun_fd);
+		return tun_fd;
+	}
+
+	warn("open_tun: ioctl[TUNSETIFF] failed");
+	close(tun_fd);
+	return -1;
+}
+
+
+/*
+int
+open_tun(const char *tun_device)
+{
 	int i;
 	int tun_fd;
 	struct ifreq ifreq;
@@ -145,6 +189,7 @@ open_tun(const char *tun_device)
 	return -1;
 }
 
+*/
 #elif WINDOWS32
 
 static void
